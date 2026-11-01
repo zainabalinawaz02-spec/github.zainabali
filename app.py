@@ -11,88 +11,32 @@ st.set_page_config(
 st.title("COVID-19 Data Analysis Dashboard")
 st.write("Welcome to my COVID-19 Dashboard!")
 
-DATA_URL = "https://catalog.ourworldindata.org/garden/covid/latest/compact/compact.csv"
+data = {
+    "Country": ["Pakistan", "India", "USA", "China", "UK"],
+    "Total Cases": [10000, 20000, 30000, 15000, 12000],
+    "Recovered": [8000, 16000, 25000, 13000, 10000],
+    "Deaths": [500, 1000, 1500, 700, 600]
+}
 
-@st.cache_data
-def load_data():
-    return pd.read_csv(DATA_URL)
+df = pd.DataFrame(data)
 
-try:
-    df = load_data()
+st.info("Note: This dashboard uses sample data for demonstration.")
 
-    country_col = "country" if "country" in df.columns else "location"
+st.header("COVID-19 Statistics")
 
-    df["date"] = pd.to_datetime(df["date"])
+col1, col2, col3 = st.columns(3)
 
-    st.sidebar.header("Dashboard Filters")
+col1.metric("Total Cases", f"{df['Total Cases'].sum():,}")
+col2.metric("Recovered", f"{df['Recovered'].sum():,}")
+col3.metric("Deaths", f"{df['Deaths'].sum():,}")
 
-    countries = sorted(df[country_col].dropna().unique())
+st.header("COVID-19 Data Table")
+st.dataframe(df, use_container_width=True)
 
-    selected_country = st.sidebar.selectbox(
-        "Select Country",
-        countries
-    )
+st.header("Country-wise COVID-19 Cases")
+st.bar_chart(df.set_index("Country")[["Total Cases"]])
 
-    country_df = df[df[country_col] == selected_country].copy()
+st.header("Recovered vs Deaths")
+st.bar_chart(df.set_index("Country")[["Recovered", "Deaths"]])
 
-    latest = country_df.dropna(
-        subset=["total_cases", "total_deaths"],
-        how="all"
-    ).iloc[-1]
-
-    st.subheader(f"COVID-19 Statistics: {selected_country}")
-
-    col1, col2 = st.columns(2)
-
-    col1.metric("Total Cases", f"{latest['total_cases']:,.0f}")
-    col2.metric("Total Deaths", f"{latest['total_deaths']:,.0f}")
-
-    st.subheader("COVID-19 Data Table")
-
-    display_cols = [
-        c for c in [
-            country_col, "date",
-            "total_cases", "new_cases",
-            "total_deaths", "new_deaths"
-        ] if c in df.columns
-    ]
-
-    st.dataframe(
-        country_df[display_cols],
-        use_container_width=True
-    )
-
-    st.subheader("Total Cases Over Time")
-
-    st.line_chart(
-        country_df.set_index("date")[["total_cases"]]
-    )
-
-    st.subheader("New Cases Over Time")
-
-    st.bar_chart(
-        country_df.set_index("date")[["new_cases"]]
-    )
-
-    st.subheader("Country-wise Comparison")
-
-    latest_data = (
-        df.dropna(subset=["total_cases"])
-        .sort_values("date")
-        .groupby(country_col)
-        .tail(1)
-        .sort_values("total_cases", ascending=False)
-        .head(10)
-    )
-
-    st.bar_chart(
-        latest_data.set_index(country_col)[["total_cases"]]
-    )
-
-    st.caption(
-        "Source: Our World in Data. "
-        "Figures are based on reported COVID-19 data."
-    )
-
-except Exception as e:
-    st.error(f"Unable to load data: {e}")
+st.success("COVID-19 Dashboard completed!")
