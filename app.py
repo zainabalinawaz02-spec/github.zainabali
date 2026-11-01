@@ -3,22 +3,27 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(
-    page_title="COVID-19 Data Dashboard",
+    page_title="COVID-19 Analysis Dashboard",
     page_icon="🦠",
     layout="wide"
 )
 
 DATA_URL = "https://catalog.ourworldindata.org/garden/covid/latest/compact/compact.csv"
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_data():
     data = pd.read_csv(DATA_URL)
     data["date"] = pd.to_datetime(data["date"], errors="coerce")
+
+    for col in ["total_cases", "new_cases", "total_deaths", "new_deaths"]:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors="coerce")
+
     return data
 
-st.title("🦠 COVID-19 Data Analysis Dashboard")
-st.markdown("### Real-world COVID-19 data analysis")
-st.write("Explore COVID-19 cases and deaths across different countries.")
+
+st.title("COVID-19 Data Analysis Dashboard")
+st.write("Analysis of real-world COVID-19 reported data.")
 
 try:
     df = load_data()
@@ -27,72 +32,66 @@ try:
 
     df = df.dropna(subset=[country_col, "date"])
 
-    # Remove regional and worldwide records
+    # Keep individual countries only
     if "iso_code" in df.columns:
         df = df[
-            ~df["iso_code"].astype(str).str.startswith("OWID_")
+            df["iso_code"].astype(str).str.fullmatch(r"[A-Z]{3}", na=False)
         ]
 
-    # Remove future dates
-    df = df[df["date"] <= pd.Timestamp.today().normalize()]
+    countries = sorted(df[country_col].unique())
 
-    countries = sorted(df[country_col].dropna().unique())
+    if not countries:
+        st.error("No country data was found.")
+        st.stop()
 
-    st.sidebar.title("Dashboard Filters")
+    st.sidebar.header("Filters")
 
-    default_index = (
-        countries.index("Pakistan")
-        if "Pakistan" in countries
-        else 0
-    )
+    default_country = "Pakistan" if "Pakistan" in countries else countries[0]
 
     selected_country = st.sidebar.selectbox(
         "Select Country",
         countries,
-        index=default_index
+        index=countries.index(default_country)
     )
 
-    country_df = df[
+    country_data = df[
         df[country_col] == selected_country
     ].sort_values("date")
 
-    if country_df.empty:
-        st.warning("No data available for this country.")
-        st.stop()
-
     st.header(f"COVID-19 Statistics: {selected_country}")
 
-    cases = country_df.dropna(subset=["total_cases"])
-    deaths = country_df.dropna(subset=["total_deaths"])
-    new_cases = country_df.dropna(subset=["new_cases"])
+    def latest_value(column):
+        if column not in country_data.columns:
+            return 0
+        values = country_data[column].dropna()
+        return values.iloc[-1] if not values.empty else 0
 
-    total_cases = cases.iloc[-1]["total_cases"] if not cases.empty else 0
-    total_deaths = deaths.iloc[-1]["total_deaths"] if not deaths.empty else 0
-    daily_cases = new_cases.iloc[-1]["new_cases"] if not new_cases.empty else 0
+    total_cases = latest_value("total_cases")
+    total_deaths = latest_value("total_deaths")
+    new_cases = latest_value("new_cases")
 
     col1, col2, col3 = st.columns(3)
 
     col1.metric("Total Cases", f"{total_cases:,.0f}")
     col2.metric("Total Deaths", f"{total_deaths:,.0f}")
-    col3.metric("Latest New Cases", f"{daily_cases:,.0f}")
+    col3.metric("Latest New Cases", f"{new_cases:,.0f}")
 
     st.divider()
 
     st.header("COVID-19 Data Table")
 
-    display_columns = [
-        c for c in [
-            country_col,
-            "date",
-            "total_cases",
-            "new_cases",
-            "total_deaths",
-            "new_deaths"
-        ] if c in country_df.columns
+    table_columns = [
+        country_col, "date", "total_cases",
+        "new_cases", "total_deaths", "new_deaths"
+    ]
+
+    table_columns = [
+        col for col in table_columns
+        if col in country_data.columns
     ]
 
     st.dataframe(
-        country_df[display_columns].tail(30),
+        country_data[table_columns].tail(30),
         use_container_width=True
     )
 
@@ -100,25 +99,25 @@ try:
 
     st.divider()
 
-    st.header("COVID-19 Trends")
+    st.header("COVID-19 Charts")
 
-    if "total_cases" in country_df.columns:
+    if "total_cases" in country_data.columns:
         st.subheader("Total Cases Over Time")
 
-        line_data = country_df.dropna(
+        cases_chart = country_data.dropna(
             subset=["total_cases"]
         ).set_index("date")[["total_cases"]]
 
-        st.line_chart(line_data)
+        st.line_chart(cases_chart)
 
-    if "new_cases" in country_df.columns:
+    if "new_cases" in country_data.columns:
         st.subheader("New Cases Over Time")
 
-        bar_data = country_df.dropna(
+        new_cases_chart = country_data.dropna(
             subset=["new_cases"]
         ).tail(30).set_index("date")[["new_cases"]]
 
-        st.bar_chart(bar_data)
+        st.bar_chart(new_cases_chart)
 
     st.divider()
 
@@ -133,19 +132,19 @@ try:
         .head(10)
     )
 
-    comparison = latest_countries.set_index(country_col)[
-        ["total_cases"]
-    ]
-
-    st.bar_chart(comparison)
+    if not latest_countries.empty:
+        comparison = latest_countries.set_index(country_col)[
+            ["total_cases"]
+        ]
+        st.bar_chart(comparison)
 
     st.caption(
-        "Data Source: Our World in Data (OWID). "
-        "Figures are based on reported COVID-19 data."
+        "Source: Our World in Data (OWID). "
+        "Figures are based on reported data."
     )
 
     st.success("Dashboard loaded successfully!")
 
-except Exception as e:
-    st.error(f"Unable to load data: {e}")
-    st.info("Please check your internet connection and try again.")
+except Exception as error:
+    st.error("The dashboard could not load the data.")
+    st.exception(error)
